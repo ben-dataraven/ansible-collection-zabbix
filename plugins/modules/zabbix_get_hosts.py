@@ -18,7 +18,7 @@ DOCUMENTATION = r"""
 module: zabbix_get_hosts
 short_description: Get host(s) info
 description:
-    - This module allows you to search for hosts based on a filter expression
+    - This module allows you to search for host(s) based on a filter expression, group, template and/or tag
 author:
     - "Ben Albon (ben@dataraven.co.uk)"
 requirements:
@@ -30,6 +30,24 @@ options:
         required: false
         type: dict
         default: {}
+    group_name:
+        description:
+            - retrieve host(s) in this host group
+        required: false
+        type: string
+        default: ""
+    template_name:
+        description:
+            - retrieve host(s) with this template
+        required: false
+        type: string
+        default: ""
+    tags:
+        description:
+            - retrieve host(s) with these tags
+        required: false
+        type: list
+        default: "[]"
 extends_documentation_fragment:
 - community.zabbix.zabbix
 
@@ -48,7 +66,7 @@ EXAMPLES = r"""
   ansible.builtin.set_fact:
     ansible_zabbix_auth_key: 8ec0d52432c15c91fcafe9888500cf9a607f44091ab554dbee860f6b44fac895
 
-- name: Get CPU item info
+- name: Get ubuntu servers host info
     # set task level variables as we change ansible_connection plugin here
     vars:
         ansible_network_os: community.zabbix.zabbix
@@ -59,8 +77,12 @@ EXAMPLES = r"""
         ansible_zabbix_url_path: "zabbixeu"  # If Zabbix WebUI runs on non-default (zabbix) path ,e.g. http://<FQDN>/zabbixeu
         ansible_host: zabbix-example-fqdn.org
     zabbix_get_hosts:
-        filter:
-            host: "Zabbix server"
+        template_name: 'Linux by Zabbix agent active'
+        tags:
+            -   "tag": "os",
+                "value": "ubuntu",
+                "operator": 1
+    register: zabbix_server_host_info
 """
 
 from ansible.module_utils.basic import AnsibleModule
@@ -69,12 +91,13 @@ from ansible_collections.community.zabbix.plugins.module_utils.base import Zabbi
 import ansible_collections.community.zabbix.plugins.module_utils.helpers as zabbix_utils
 
 class Hosts(ZabbixBase):
-    def get_hosts(self, filter, groupid, templateid):
+    def get_hosts(self, filter, groupid, templateid, tags):
         """ get host info """
         hosts_list = self._zapi.host.get({
             "filter": filter,
             "groupids": groupid,
-            "templateids": templateid
+            "templateids": templateid,
+            "tags": tags
         })
         if len(hosts_list) <1:
             self._module.fail_json(msg="Hosts not found using filter %s" % filter)
@@ -106,7 +129,8 @@ def main():
     argument_spec.update(dict(
         filter=dict(type="dict", default={}, required=False),
         group_name=dict(type="str", default="", required=False),
-        template_name=dict(type="str", default="", required=False)
+        template_name=dict(type="str", default="", required=False),
+        tags=dict(type="list", elements="dict", default=[], required=False)
     ))
     module = AnsibleModule(
         argument_spec=argument_spec,
@@ -116,6 +140,7 @@ def main():
     filter = module.params["filter"]
     group_name = module.params["group_name"]
     template_name = module.params["template_name"]
+    tags = module.params["tags"]
 
     hosts = Hosts(module)
     if group_name != "":
@@ -126,7 +151,7 @@ def main():
         templateid = hosts.get_templateid(template_name)
     else:
         templateid = ""
-    hosts_list = hosts.get_hosts(filter, groupid, templateid)
+    hosts_list = hosts.get_hosts(filter, groupid, templateid, tags)
 
     module.exit_json(ok=True, host_list=hosts_list)
 
